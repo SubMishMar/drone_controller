@@ -1,0 +1,3 @@
+<launch>
+ <node name="drone_controller" pkg="drone_controller" type="drone_controller_node"/>
+</launch>
