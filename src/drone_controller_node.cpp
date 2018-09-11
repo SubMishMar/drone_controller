@@ -9,6 +9,7 @@
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
+#include <mavros_msgs/CommandTOL.h>
 
 mavros_msgs::State current_state;
 void state_cb(const mavros_msgs::State::ConstPtr& msg){
@@ -24,12 +25,9 @@ int main(int argc, char **argv)
             ("mavros/state", 10, state_cb);
     ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("mavros/setpoint_position/local", 10);
-    ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
-        ("mavros/set_mode");
-    ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
-        ("mavros/cmd/arming");
-    ros::ServiceClient takeoff_client = nh.serviceClient<mavros_msgs::CommandBool>
-        ("/mavros/cmd/takeoff");
+
+
+
 
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(20.0);
@@ -54,30 +52,40 @@ int main(int argc, char **argv)
 
     mavros_msgs::SetMode offb_set_mode;
     offb_set_mode.request.custom_mode = "GUIDED";
+    ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
+        ("mavros/set_mode");
+    if(set_mode_client.call(offb_set_mode)) {
+        ROS_INFO("Change mode cmd sent %d", offb_set_mode.response.mode_sent);
+    } else {
+        ROS_ERROR("Failed to Change Mode Service");
+        return -1;
+    }
 
     mavros_msgs::CommandBool arm_cmd;
     arm_cmd.request.value = true;
+    ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
+        ("mavros/cmd/arming");
+    if(arming_client.call(arm_cmd)) {
+        sleep(2);
+        ROS_INFO("Arming command sent %d", arm_cmd.response.success);;
+    } else {
+        ROS_ERROR("Failed to Call Arming Service");
+        return -1;
+    }
 
-    ros::Time last_request = ros::Time::now();
+    mavros_msgs::CommandTOL takeoff_command;
+    takeoff_command.request.altitude = 1.5;
+    ros::ServiceClient takeoff_client = nh.serviceClient<mavros_msgs::CommandTOL>
+        ("mavros/cmd/takeoff");
+    if(takeoff_client.call(takeoff_command)) {
+        sleep(5);
+        ROS_INFO("takeoff sent %d", takeoff_command.response.success);
+    } else {
+        ROS_ERROR("Failed to Take Off");
+        return -1;
+    }
 
     while(ros::ok()){
-        if( current_state.mode != "GUIDED" &&
-            (ros::Time::now() - last_request > ros::Duration(1.0))){
-            if( set_mode_client.call(offb_set_mode) &&
-                offb_set_mode.response.mode_sent){
-                ROS_INFO("GUIDED enabled");
-            }
-            last_request = ros::Time::now();
-        } else {
-            if( !current_state.armed &&
-                (ros::Time::now() - last_request > ros::Duration(1.0))){
-                if( arming_client.call(arm_cmd) &&
-                    arm_cmd.response.success){
-                    ROS_INFO("Vehicle armed");
-                }
-                last_request = ros::Time::now();
-            }
-        }
 
         local_pos_pub.publish(pose);
 
